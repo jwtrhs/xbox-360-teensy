@@ -1,22 +1,20 @@
-* About *
+**About**
 Firmware for a Teensy device that interfaces with some old Xbox 360 parts that
 I've integrated into a PC.
 
 What the firmware does is:
-* receives IR signals from an Xbox 360 remote and maps them to USB HID
-  commands
-* interfaces with the Xbox 360 RF module to intiate controller sync, and
-  control the LED ring
-* monitors the front side buttons (power, sync and eject) and handles them
-  as necessary
+
+* receives IR signals from an Xbox 360 remote and maps them to USB HID commands
+* interfaces with the Xbox 360 RF module to intiate controller sync, and control the LED ring
+* monitors the front side buttons (power, sync and eject) and handles them as necessary
 
 
-* Teensy Model *
+**Teensy Model**
 The model I used for this was the Teensy 2.0, but it should work on any Teensy
-model without much modification (I thunk only the input pins would need to be
+model without much modification (I think only the input pins would need to be
 changed).
 
-* Teensy Library Modifications *
+**Teensy Library Modifications**
 I chose to use the Teensy as a raw HID device and defined my own HID report,
 so that some IR commands get mapped to keyboard, and some to a consumer control
 device (this is useful for the media buttons). This requires a slight modification
@@ -24,9 +22,19 @@ to a couple of files in the Teensy USB RawHID library
 (arduino/hardware/teensy/cores/usb_rawhid):
 
 In file usb_private.h, change the transmitted report size from 64 to 9:
+
+```
+#!c
+
 #define RAWHID_TX_SIZE		9
+```
+
 
 And in file usb.c, replace the rawhid_hid_report_desc array with:
+
+```
+#!c
+
 static uint8_t PROGMEM rawhid_hid_report_desc[] = {
     0x05, 0x01, /* Usage Page (Generic Desktop)             */
     0x09, 0x06, /* Usage (Keyboard)                         */
@@ -79,3 +87,4 @@ static uint8_t PROGMEM rawhid_hid_report_desc[] = {
     0x81, 0x01,                    // INPUT (Cnst,Ary,Abs)
     0xc0                           //               END_COLLECTION
 };
+```
