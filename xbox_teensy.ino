@@ -25,7 +25,7 @@ Bounce eject_btn = Bounce(eject_btn_pin, BOUNCE_INTERVAL);
 
 // IR Receiver
 IRrecv irrecv(ir_pin);
-//decode_results results;
+decode_results results;
 
 // USB HID state
 enum HID_STATE
@@ -34,12 +34,9 @@ enum HID_STATE
   HID_STATE_ACTIVE   // sending actual data
 };
 
-// current time, set on every loop
-unsigned long now_time;
-
 // data for USB HID device
-unsigned int  state = HID_STATE_IDLE;
-unsigned long last_toggle = 0;
+unsigned int  hid_state          = HID_STATE_IDLE;
+unsigned long last_toggle        = 0;
 unsigned long last_transmit_time = micros();
 
 // USB HID timeouts
@@ -54,7 +51,7 @@ unsigned long last_transmit_time = micros();
 #define KEYBOARD_RIGHT_CTRL_MASK  0x10
 #define KEYBOARD_RIGHT_SHIFT_MASK 0x20
 #define KEYBOARD_RIGHT_ALT_MASK   0x40
-#define KEYBOARD_RIGHT_GUI_MASK   0xF0
+#define KEYBOARD_RIGHT_GUI_MASK   0x80
 
 // USB HID report IDs
 #define KEYBOARD_REPORT_ID         0x01
@@ -135,6 +132,7 @@ void setup()
   pinMode(sync_btn_pin, INPUT_PULLUP);
   pinMode(eject_btn_pin, INPUT_PULLUP);
   
+  // Update inputs
   pwr_btn.update();
   pwr_stat.update();
   sync_btn.update();
@@ -155,24 +153,22 @@ void setup()
 }
 
 void loop() {
-  now_time = micros();
-  
+  // Check for received IR signals and handle them
   handle_ir();
   
+  // Check push buttons and power status
   handle_inputs();
   
   // Set the status led
-  digitalWrite(led_pin, (state == HID_STATE_ACTIVE)
+  digitalWrite(led_pin, (hid_state == HID_STATE_ACTIVE)
     || !pwr_btn.read() || !eject_btn.read() || !sync_btn.read());
 }
 
 // Handle IR receiver data
 void handle_ir()
 {
-  decode_results results;
   if (irrecv.decode(&results))
   {
-    
     #if DEBUG
     Serial.print("IR command recvd: ");
     Serial.print(results.value, HEX);
@@ -180,12 +176,10 @@ void handle_ir()
     Serial.println(results.decode_type);
     #endif DEBUG
     
-    // only handle commands from xbox 360 remote
+    // only handle commands from the Xbox 360 remote
     if ((results.value & XBOX_360_REMOTE_MASK) == XBOX_360_REMOTE_MASK
         && results.decode_type == RC6)
     {
-      last_transmit_time = now_time;
-    
       unsigned long toggle = results.value & 0x00008000;
       byte code = results.value & 0x000000FF;
       
@@ -277,8 +271,7 @@ void handle_ir()
         switch (report_id)
         {
         case KEYBOARD_REPORT_ID:
-          // if new button press, reset
-          if (toggle != last_toggle)
+          if (toggle != last_toggle)  // if new button press, reset
             send_hid_report(report_id, NULL_DATA, DATA_SIZE);
           send_hid_report(report_id, data, DATA_SIZE);
           break;
@@ -294,8 +287,7 @@ void handle_ir()
           break;
         };
         
-        state = HID_STATE_ACTIVE;
-        last_transmit_time = now_time;
+        hid_state = HID_STATE_ACTIVE;
       }
       
       last_toggle = toggle;
@@ -304,13 +296,12 @@ void handle_ir()
   }
   
   // check keyboard timeout or need to send idle transmission
-  if ((state == HID_STATE_ACTIVE && time_diff(last_transmit_time, now_time) > USB_HID_KEY_PRESS_TIMEOUT)
-     || (state == HID_STATE_IDLE && time_diff(last_transmit_time, now_time) > USB_HID_IDLE_TIMEOUT))
+  if ((hid_state == HID_STATE_ACTIVE && time_diff(last_transmit_time, micros()) > USB_HID_KEY_PRESS_TIMEOUT)
+     || (hid_state == HID_STATE_IDLE && time_diff(last_transmit_time, micros()) > USB_HID_IDLE_TIMEOUT))
   {
     send_hid_report(KEYBOARD_REPORT_ID, NULL_DATA, DATA_SIZE);
     send_hid_report(CONSUMER_CONTROL_REPORT_ID, NULL_DATA, DATA_SIZE);
-    state = HID_STATE_IDLE;
-    last_transmit_time = now_time;
+    hid_state = HID_STATE_IDLE;
   }
 }
 
@@ -318,6 +309,7 @@ void handle_ir()
 // report_id is first byte of report packet, followed by data
 int send_hid_report(byte report_id, const void* ptr, const int length)
 {
+  last_transmit_time = micros();
   byte buffer[length + 1];
   buffer[0] = report_id;
   for (int i = 0; i < length; ++i)
@@ -343,7 +335,7 @@ void handle_inputs()
   if (pwr_btn.risingEdge()) Serial.println("pwr_btn rising");
   if (pwr_btn.fallingEdge()) Serial.println("pwr_btn falling");
   #endif
-  // Pass the pwr_btn_pin straight through to the pwr_switch_pin
+  // Pass the inverted pwr_btn_pin straight through to the pwr_switch_pin
   digitalWrite(pwr_switch_pin, !pwr_btn.read());
   
   // Check computer power status
@@ -357,14 +349,16 @@ void handle_inputs()
     // Initialise the RF module
     send_rf_module_cmd(RF_CMD_LED_INIT);
     delay(50);
+    // Run the LED ring boot animation
     send_rf_module_cmd(RF_CMD_BOOTANIM);
     delay(50);
   }
   else if (pwr_stat.fallingEdge())  // Computer has just been turned off
   {
-    // Turn off controllers, RF module LEDs, maybe also turn off module?
+    // Turn off any connected controllers
     send_rf_module_cmd(RF_CMD_CTRLR_OFF);
     delay(50);
+    // Turn off LED ring
     send_rf_module_cmd(RF_CMD_LED_OFF);
     delay(50);
   }
@@ -377,6 +371,7 @@ void handle_inputs()
   #endif
   if (sync_btn.fallingEdge())
   {
+    // Initiate sync process on RF module
     send_rf_module_cmd(RF_CMD_SYNC);
     delay(50);
   }
@@ -408,7 +403,6 @@ boolean send_rf_module_cmd(int cmd_do)
   unsigned long timer;
   for(int i = 9; i >= 0; i--){
     timer = micros(); // get the current time to monitor for timeout
-    
     while (prev == digitalRead(clock_pin)) //detects change in clock
     {
       if (time_diff(timer, micros()) > RF_MODULE_TIMEOUT)
@@ -424,7 +418,6 @@ boolean send_rf_module_cmd(int cmd_do)
     digitalWrite(data_pin, (cmd_do >> i) & 0x01);
     
     timer = micros(); // get the current time to monitor for timeout
-    
     while (prev == digitalRead(clock_pin)) //detects upward edge of clock
     {
       if (time_diff(timer, micros()) > RF_MODULE_TIMEOUT)
