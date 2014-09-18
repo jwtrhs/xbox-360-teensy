@@ -88,3 +88,10 @@ static uint8_t PROGMEM rawhid_hid_report_desc[] = {
     0xc0                           //               END_COLLECTION
 };
 ```
+
+**References**
+
+* [XBOX 360 Motherboard Headers and Connector V1.4 documentation](http://dwl.xbox-scene.com/tutorial/Xbox_360-HandC-V1_4.pdf) for how to wire up the Xbox 360 components
+* [RF Module serial protocol](http://forums.xbox-experts.com/viewtopic.php?f=13&t=4029&sid=d67fad5f1eb2e7254ee59c3233302624)  (see the linked zip for some useful code and explanation), also [here](http://tkkrlab.nl/wiki/XBOX_360_RF_Module) and [here](http://techocd.blogspot.com.au/2014/01/xbox-360-wireless-controller-to-pc-via.html)
+* [Tutorial on USB HID report descriptors](http://eleccelerator.com/tutorial-about-usb-hid-report-descriptors/), very useful to understand the USB HID spec which can be quite tricky, see also the official [class definition](http://www.usb.org/developers/hidpage/HID1_11.pdf) and [usage tables](http://www.usb.org/developers/hidpage/Hut1_12v2.pdf)
+* [Using an Xbox 360 remote with arduino](http://www.righto.com/2010/12/64-bit-rc6-codes-arduino-and-xbox.html), also [this](http://www.remotecentral.com/cgi-bin/mboard/rc-discrete/thread.cgi?5489) might be useful but I didn't end up using it
