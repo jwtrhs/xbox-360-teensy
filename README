@@ -8,6 +8,9 @@ What the firmware does is:
 * interfaces with the Xbox 360 RF module to initiate controller sync, and control the LED ring
 * monitors the front side buttons (power, sync and eject) and handles them as necessary
 
+Here's a WIP pic of how the Teensy is connected. Each of the components labelled in red are salvaged from an old (and broken) Xbox 360 motherboard. Not shown in the image is that the Teensy is connected to the motherboard via its USB port, and it also connects to the front panel jumers power_switch (to turn on/off the PC) and power_led (to detect when the PC is on/off).
+![WP_20140918_004.jpg](https://bitbucket.org/repo/ar6eMo/images/1465639268-WP_20140918_004.jpg)
+
 **Teensy Model**
 
 The model I used for this was the Teensy 2.0, but it should work on any Teensy
