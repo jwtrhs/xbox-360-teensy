@@ -3,7 +3,7 @@
 
 // Take care not to leave this on for production, it slows the repsonse time
 // of the IR Remote -> USB HID quite a lot.
-#define DEBUG 1
+#define DEBUG 0
 
 // Input/Output pins
 #define ir_pin          0  // data from IR receiver
@@ -121,14 +121,13 @@ void setup()
   pinMode(clock_pin, INPUT);
   
   // Setup outputs
-  pinMode(pwr_switch_pin, OUTPUT);
-  digitalWrite(pwr_switch_pin, LOW);
+  pinMode(pwr_switch_pin, INPUT); // Though this is an output, we want to leave it floating when not in use
   pinMode(led_pin, OUTPUT);
   digitalWrite(led_pin, LOW);
   
   // Setup inputs
   pinMode(pwr_btn_pin, INPUT_PULLUP);
-  pinMode(pwr_stat_pin, INPUT);         //TODO: figure out how this works
+  pinMode(pwr_stat_pin, INPUT); 
   pinMode(sync_btn_pin, INPUT_PULLUP);
   pinMode(eject_btn_pin, INPUT_PULLUP);
   
@@ -141,10 +140,12 @@ void setup()
   // Initialise RF module LEDs if power is already on
   if (pwr_stat.read())
   {
+    // Initialise the LED ring
     send_rf_module_cmd(RF_CMD_LED_INIT);
     delay(50);
-    send_rf_module_cmd(RF_CMD_BOOTANIM);
-    delay(50);
+    // Display the boot animation
+    //send_rf_module_cmd(RF_CMD_BOOTANIM);
+    //delay(50);
   }
   
   #if DEBUG
@@ -170,8 +171,9 @@ void handle_ir()
   if (irrecv.decode(&results))
   {
     #if DEBUG
-    Serial.print("IR command recvd: ");
-    Serial.print(results.value, HEX);
+    Serial.print("IR command recvd: 0x");
+    //Serial.print((unsigned long)(results.value >> 32), HEX);
+    Serial.print((unsigned long)(results.value), HEX);
     Serial.print(" ");
     Serial.println(results.decode_type);
     #endif DEBUG
@@ -271,7 +273,7 @@ void handle_ir()
         switch (report_id)
         {
         case KEYBOARD_REPORT_ID:
-          if (toggle != last_toggle)  // if new button press, reset
+          if (toggle != last_toggle)  // If new button press, then reset the HID message
             send_hid_report(report_id, NULL_DATA, DATA_SIZE);
           send_hid_report(report_id, data, DATA_SIZE);
           break;
@@ -279,7 +281,7 @@ void handle_ir()
           if (toggle != last_toggle)
           {
             send_hid_report(report_id, data, DATA_SIZE);
-            // reset the HID message
+            // Reset the HID message
             send_hid_report(report_id, NULL_DATA, DATA_SIZE);
           }
           break;
@@ -322,7 +324,7 @@ int send_hid_report(byte report_id, const void* ptr, const int length)
 unsigned long time_diff(unsigned long time1, unsigned long time2)
 {
   if (time1 > time2)
-    return 0xFFFF - time1 + time2;
+    return 0xFFFFFFFFUL - time1 + time2;
   else return time2 - time1;
 }
 
@@ -335,8 +337,22 @@ void handle_inputs()
   if (pwr_btn.risingEdge()) Serial.println("pwr_btn rising");
   if (pwr_btn.fallingEdge()) Serial.println("pwr_btn falling");
   #endif
-  // Pass the inverted pwr_btn_pin straight through to the pwr_switch_pin
-  digitalWrite(pwr_switch_pin, !pwr_btn.read());
+  // The pwr_switch+ pin on the front panel is left floating at 3.3V when open,
+  // and is driven to GND when closed (i.e. when the button is pushed)
+  // Note: the mobo I am using is an ASRock FM2A88X-ITX+, it may be different for others
+  if (pwr_btn.read())
+  {
+    // The power button is open (i.e. not pushed)
+    // Leave the pin floating when not active
+    pinMode(pwr_switch_pin, INPUT);
+  }
+  else
+  {
+    // The power button is closed (i.e. pushed)
+    // Emulate a button press by driving the pin to GND
+    pinMode(pwr_switch_pin, OUTPUT);
+    digitalWrite(pwr_switch_pin, LOW);
+  }
   
   // Check computer power status
   pwr_stat.update();
