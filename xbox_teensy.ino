@@ -316,7 +316,11 @@ int send_hid_report(byte report_id, const void* ptr, const int length)
   buffer[0] = report_id;
   for (int i = 0; i < length; ++i)
     buffer[i + 1] = *((const byte *)ptr + i);
-  return RawHID.send(buffer, 100);
+  
+  //if (RawHID.available())
+    return RawHID.send(buffer, 100);
+  //else
+  //  return -1;
 }
 
 // Calculate the difference between two times, taking into account overflow
