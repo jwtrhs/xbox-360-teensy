@@ -1,3 +1,4 @@
+#include <TimerOne.h>
 #include <IRremote.h>
 #include <Bounce.h>
 
@@ -5,20 +6,22 @@
 // of the IR Remote -> USB HID quite a lot.
 #define DEBUG 0
 
+// For checking the USB connection (not needed, imported by TimerOne.h)
+//#define USBCON 0E0
+//#define UDINT 0xD8
+
 // Input/Output pins
 #define ir_pin          0  // data from IR receiver
 #define clock_pin       5  // clock line from RF module
 #define data_pin        6  // data line to RF module
-#define pwr_btn_pin     21 // power button from RF module
 #define pwr_stat_pin    20 // power status from motherboard (led- on F_PANEL header)
-#define pwr_switch_pin  19 // power switch to motherboard (power+ on F_PANEL header);
+#define pwr_switch_pin  19 // power switch to motherboard (power+ on F_PANEL header)
 #define sync_btn_pin    18 // sync button
 #define eject_btn_pin   3  // eject button
 #define led_pin         11 // Teensy onboard LED 
 
 // Inputs
 #define BOUNCE_INTERVAL 10
-Bounce pwr_btn = Bounce(pwr_btn_pin, BOUNCE_INTERVAL);
 Bounce pwr_stat = Bounce(pwr_stat_pin, BOUNCE_INTERVAL);
 Bounce sync_btn = Bounce(sync_btn_pin, BOUNCE_INTERVAL);
 Bounce eject_btn = Bounce(eject_btn_pin, BOUNCE_INTERVAL);
@@ -105,6 +108,12 @@ const byte NULL_DATA[DATA_SIZE] = {0};
 // RF module serial timeout
 #define RF_MODULE_TIMEOUT 100000  // 100 ms
 
+// Teensy interrupt period
+#define TEENSY_INTERRUPT_PERIOD 1000000
+
+unsigned long last_interrupt_time = micros();
+
+
 void setup()
 {
   #if DEBUG
@@ -112,6 +121,9 @@ void setup()
   Serial.println();
   Serial.println("setup started");
   #endif
+  
+  // Setup USB detection
+  USBCON = USBCON | B00010000; 
   
   // Start the IR receiver
   irrecv.enableIRIn();
@@ -126,13 +138,11 @@ void setup()
   digitalWrite(led_pin, LOW);
   
   // Setup inputs
-  pinMode(pwr_btn_pin, INPUT_PULLUP);
   pinMode(pwr_stat_pin, INPUT); 
   pinMode(sync_btn_pin, INPUT_PULLUP);
   pinMode(eject_btn_pin, INPUT_PULLUP);
   
   // Update inputs
-  pwr_btn.update();
   pwr_stat.update();
   sync_btn.update();
   eject_btn.update();
@@ -148,6 +158,10 @@ void setup()
     //delay(50);
   }
   
+  // Setup timer interrupt
+  Timer1.initialize(1000000);
+  Timer1.attachInterrupt(checkForHang);
+  
   #if DEBUG
   Serial.println("setup complete");
   #endif
@@ -162,7 +176,27 @@ void loop() {
   
   // Set the status led
   digitalWrite(led_pin, (hid_state == HID_STATE_ACTIVE)
-    || !pwr_btn.read() || !eject_btn.read() || !sync_btn.read());
+    || !eject_btn.read() || !sync_btn.read());
+}
+
+// Checks if the Teensy has froxen, probably due to trying to communicate on the USB port
+// after the computer has shutdown
+void checkForHang()
+{ 
+  // USB HID reports should at least be sent every time the idle timeout occurs
+  if (time_diff(last_transmit_time, micros()) > (2 * USB_HID_IDLE_TIMEOUT))
+  {
+    // Teensy has probably frozen, reset
+    #if DEBUG
+    Serial.println("Hang timeout detected, resetting...");
+    #endif
+    
+    digitalWrite(led_pin, HIGH);
+     _restart_Teensyduino_();
+     delay(50);
+  }
+  
+  last_interrupt_time = micros();
 }
 
 // Handle IR receiver data
@@ -171,7 +205,7 @@ void handle_ir()
   if (irrecv.decode(&results))
   {
     #if DEBUG
-    Serial.print("IR command recvd: 0x");
+    Serial.print("IR cmd rcvd: 0x");
     //Serial.print((unsigned long)(results.value >> 32), HEX);
     Serial.print((unsigned long)(results.value), HEX);
     Serial.print(" ");
@@ -311,16 +345,30 @@ void handle_ir()
 // report_id is first byte of report packet, followed by data
 int send_hid_report(byte report_id, const void* ptr, const int length)
 {
+  noInterrupts();
   last_transmit_time = micros();
+  interrupts();
+  
   byte buffer[length + 1];
   buffer[0] = report_id;
   for (int i = 0; i < length; ++i)
     buffer[i + 1] = *((const byte *)ptr + i);
   
-  //if (RawHID.available())
+  // If the Teensy tries to communicate over USB when the computer is shutdown,
+  // it will freeze. This code prevents that from happening by checking the USB
+  // connection first, before attempting to send.
+  // There may be a race condition here, however...
+  if (UDINT & B00000001)
+  //if (false)
+  {
+    // USB disconnected
+    return -1;
+  }
+  else
+  {
+    // USB connected
     return RawHID.send(buffer, 100);
-  //else
-  //  return -1;
+  }
 }
 
 // Calculate the difference between two times, taking into account overflow
@@ -334,30 +382,7 @@ unsigned long time_diff(unsigned long time1, unsigned long time2)
 
 // Handle inputs, incluing ipower button, sync button and eject button
 void handle_inputs()
-{
-  // Check the power button
-  pwr_btn.update();
-  #if DEBUG
-  if (pwr_btn.risingEdge()) Serial.println("pwr_btn rising");
-  if (pwr_btn.fallingEdge()) Serial.println("pwr_btn falling");
-  #endif
-  // The pwr_switch+ pin on the front panel is left floating at 3.3V when open,
-  // and is driven to GND when closed (i.e. when the button is pushed)
-  // Note: the mobo I am using is an ASRock FM2A88X-ITX+, it may be different for others
-  if (pwr_btn.read())
-  {
-    // The power button is open (i.e. not pushed)
-    // Leave the pin floating when not active
-    pinMode(pwr_switch_pin, INPUT);
-  }
-  else
-  {
-    // The power button is closed (i.e. pushed)
-    // Emulate a button press by driving the pin to GND
-    pinMode(pwr_switch_pin, OUTPUT);
-    digitalWrite(pwr_switch_pin, LOW);
-  }
-  
+{  
   // Check computer power status
   pwr_stat.update();
   #if DEBUG
