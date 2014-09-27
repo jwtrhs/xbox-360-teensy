@@ -109,7 +109,7 @@ const byte NULL_DATA[DATA_SIZE] = {0};
 #define RF_MODULE_TIMEOUT 100000  // 100 ms
 
 // Teensy interrupt period
-#define TEENSY_INTERRUPT_PERIOD 1000000
+#define TEENSY_INTERRUPT_PERIOD 1000000  // 1 second
 
 unsigned long last_interrupt_time = micros();
 
@@ -147,15 +147,24 @@ void setup()
   sync_btn.update();
   eject_btn.update();
   
-  // Initialise RF module LEDs if power is already on
+  // Initialise RF module LEDs if power is already on, or turn them off if not
   if (pwr_stat.read())
   {
     // Initialise the LED ring
     send_rf_module_cmd(RF_CMD_LED_INIT);
     delay(50);
     // Display the boot animation
-    //send_rf_module_cmd(RF_CMD_BOOTANIM);
+    send_rf_module_cmd(RF_CMD_BOOTANIM);
     //delay(50);
+  }
+  else
+  {
+    // Turn off any connected controllers
+    send_rf_module_cmd(RF_CMD_CTRLR_OFF);
+    delay(50);
+    // Turn off LED ring
+    send_rf_module_cmd(RF_CMD_LED_OFF);
+    delay(50);
   }
   
   // Setup timer interrupt
@@ -236,7 +245,7 @@ void handle_ir()
         case BTN_EJECT:
           //report_id = CONSUMER_CONTROL_REPORT_ID;
           //data[0] = 0x02;
-          send_rf_module_cmd(RF_CMD_CTRLR_OFF);
+          send_rf_module_cmd(RF_CMD_CTRLR_OFF);  // Turn off controllers
           delay(50);
           break;
         case BTN_PLAY:
@@ -358,8 +367,8 @@ int send_hid_report(byte report_id, const void* ptr, const int length)
   // it will freeze. This code prevents that from happening by checking the USB
   // connection first, before attempting to send.
   // There may be a race condition here, however...
-  if (UDINT & B00000001)
-  //if (false)
+  //if (UDINT & B00000001)
+  if (false)    // Ignore USB status
   {
     // USB disconnected
     return -1;
