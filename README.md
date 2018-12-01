@@ -10,7 +10,7 @@ What the firmware does is:
 
 Here's a WIP pic of how the Teensy is connected. Each of the components labelled in RED are salvaged from an old (and broken) Xbox 360 motherboard. Not shown in the image is that the Teensy is connected to the motherboard via its USB port, and it also connects to the front panel jumers power_switch (to turn on/off the PC) and power_led (to detect when the PC is on/off).
 
-![WP_20140918_004.jpg](https://bitbucket.org/repo/ar6eMo/images/1465639268-WP_20140918_004.jpg)
+![board_layout_labelled.jpg](docs/images/board_layout_labelled.jpg?raw=true)
 
 **Teensy Model**
 
